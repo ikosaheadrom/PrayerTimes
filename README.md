@@ -1,6 +1,6 @@
 # Prayer Times App
-
-A feature-rich Flutter application for displaying Islamic prayer times in Morocco with both online (Ministry API) and offline (calculation-based) modes, home screen widgets, and precise prayer time notifications.
+ 
+ and android app i created for fun and to fix a problem that i have been experiancing with prayer times from other apps that dont match morocco's ministry times, so you end up really confused, this app pulls the data directly from the ministry's official page so no need to struggle any longer.
 
 ## Features
 
