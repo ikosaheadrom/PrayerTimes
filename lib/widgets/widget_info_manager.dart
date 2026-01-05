@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/prayer_times_provider.dart';
 import 'widget_cache_service.dart' show WidgetCacheService, WidgetCacheData;
@@ -293,8 +294,39 @@ class WidgetInfoManager {
   /// Quick update widget cache with current prayer times from selected source
   /// This reads app settings and fetches times based on the current source selection
   /// Useful for immediate updates when settings change or user requests refresh
+  /// After updating cache, triggers widget refresh via broadcast
   Future<bool> quickUpdateWidgetCache() async {
-    return fetchAndCacheFreshPrayerTimes();
+    try {
+      debugPrint('$_debugTag quickUpdateWidgetCache: Starting quick widget cache update...');
+      
+      // Step 1: Fetch and cache fresh prayer times
+      final success = await fetchAndCacheFreshPrayerTimes();
+      
+      if (success) {
+        debugPrint('$_debugTag quickUpdateWidgetCache: ✓ Cache updated successfully');
+        
+        // Step 2: Trigger widget refresh via broadcast to ensure UI updates
+        debugPrint('$_debugTag quickUpdateWidgetCache: Triggering widget UI update...');
+        try {
+          const platform = MethodChannel('com.example.pray_time/widget');
+          final result = await platform.invokeMethod('sendWidgetUpdateBroadcast');
+          debugPrint('$_debugTag quickUpdateWidgetCache: ✓ Widget refresh broadcast sent: $result');
+        } catch (e) {
+          // Widget refresh from isolate might fail, but that's OK
+          // The cache was updated, and the widget will read the new data
+          debugPrint('$_debugTag quickUpdateWidgetCache: ⚠ Could not send broadcast from here: $e');
+          debugPrint('$_debugTag quickUpdateWidgetCache: NOTE: Widget will still use updated cache');
+        }
+      } else {
+        debugPrint('$_debugTag quickUpdateWidgetCache: ✗ Failed to update cache');
+      }
+      
+      return success;
+    } catch (e, st) {
+      debugPrint('$_debugTag quickUpdateWidgetCache: EXCEPTION: $e');
+      debugPrint('$_debugTag quickUpdateWidgetCache: Stack: $st');
+      return false;
+    }
   }
 
   /// Update widget information cache

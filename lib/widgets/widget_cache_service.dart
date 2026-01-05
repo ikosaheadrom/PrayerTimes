@@ -147,6 +147,7 @@ class WidgetCacheService {
       // Log what we're saving
       debugPrint('$_debugTag [JSON-SAVE] Saving cache with: hue=${cacheData.hue}, isDarkMode=${cacheData.isDarkMode}');
       debugPrint('$_debugTag [JSON-SAVE] JSON string: $jsonString');
+      debugPrint('$_debugTag [JSON-SAVE] Prayer times: Fajr=$fajr, Dhuhr=$dhuhr, Maghrib=$maghrib');
       
       // Save to Dart's cache
       final dartSuccess = await prefs.setString(_cacheKey, jsonString);

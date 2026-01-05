@@ -80,22 +80,20 @@ class PrayerWidgetProviderHorizontal : AppWidgetProvider() {
         try {
             when (intent.action) {
                 ACTION_MANUAL_REFRESH -> {
-                    logDebug(">>> MATCHED ACTION_MANUAL_REFRESH (${ACTION_MANUAL_REFRESH})")
-                    logDebug("Manual refresh requested")
-                    val appWidgetManager = AppWidgetManager.getInstance(context)
-                    val componentName = ComponentName(context, PrayerWidgetProviderHorizontal::class.java)
-                    val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                    
-                    for (appWidgetId in appWidgetIds) {
-                        updateAppWidget(context, appWidgetManager, appWidgetId)
-                    }
+                    logDebug("Manual refresh requested for horizontal widget")
+                    val updateRequest = OneTimeWorkRequestBuilder<WidgetCacheUpdateWorker>()
+                        .build()
+                    WorkManager.getInstance(context).enqueueUniqueWork(
+                        "widget_cache_update_horizontal",  // Unique ID for horizontal widget
+                        ExistingWorkPolicy.KEEP,
+                        updateRequest
+                    )
+                    logDebug("Horizontal widget worker enqueued with ID: widget_cache_update_horizontal")
                 }
                 ACTION_UPDATE_PRAYER_HIGHLIGHT -> {
-                    logDebug(">>> MATCHED ACTION_UPDATE_PRAYER_HIGHLIGHT")
                     handleHighlightUpdate(context)
                 }
                 else -> {
-                    logDebug(">>> No match - action was: ${intent.action}")
                     super.onReceive(context, intent)
                 }
             }
@@ -344,10 +342,11 @@ class PrayerWidgetProviderHorizontal : AppWidgetProvider() {
             // Refresh button
             val refreshIntent = Intent(context, PrayerWidgetProviderHorizontal::class.java).apply {
                 action = ACTION_MANUAL_REFRESH
+                setPackage(context.packageName)  // Ensure broadcast goes to this package
             }
             val refreshPendingIntent = PendingIntent.getBroadcast(
                 context,
-                2,
+                1002,  // Use unique ID for refresh button (horizontal)
                 refreshIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
@@ -651,7 +650,7 @@ class PrayerWidgetProviderHorizontal : AppWidgetProvider() {
             
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
-                1,
+                101,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )

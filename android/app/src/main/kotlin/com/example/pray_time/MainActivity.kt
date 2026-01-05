@@ -61,18 +61,12 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "sendWidgetUpdateBroadcast" -> {
-                        // Broadcast to update both widgets by triggering their onReceive handlers
-                        Log.d("[MainActivity]", ">>> Sending ACTION_MANUAL_REFRESH broadcast")
-                        val intentVertical = Intent("com.example.pray_time.ACTION_MANUAL_REFRESH")
-                        intentVertical.setPackage(packageName)
-                        sendBroadcast(intentVertical)
-                        
-                        Log.d("[MainActivity]", ">>> Sending ACTION_MANUAL_REFRESH_H broadcast")
-                        val intentHorizontal = Intent("com.example.pray_time.ACTION_MANUAL_REFRESH_H")
-                        intentHorizontal.setPackage(packageName)
-                        sendBroadcast(intentHorizontal)
-                        
-                        Log.d("[MainActivity]", ">>> Both broadcasts sent")
+                        // This method is no longer used - worker handles widget updates directly
+                        result.success(true)
+                    }
+                    "enqueueWidgetUpdateWorker" -> {
+                        // Called from background isolate to trigger widget update
+                        enqueueWidgetUpdateWorker()
                         result.success(true)
                     }
                     else -> result.notImplemented()
@@ -86,30 +80,56 @@ class MainActivity : FlutterActivity() {
     private fun setupWidgetRefreshReceiver(flutterEngine: FlutterEngine) {
         widgetRefreshReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action == "com.example.pray_time.REFRESH_WIDGET_CACHE") {
-                    // Call Dart to fetch fresh prayer times
-                    MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
-                        .invokeMethod("refreshWidget", null, object : MethodChannel.Result {
-                            override fun success(result: Any?) {
-                                // Dart completed the refresh
-                            }
-                            override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-                                // Error occurred in Dart
-                            }
-                            override fun notImplemented() {
-                                // Method not implemented
-                            }
-                        })
+                when (intent?.action) {
+                    "com.example.pray_time.REFRESH_WIDGET_CACHE" -> {
+                        // Call Dart to fetch fresh prayer times
+                        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
+                            .invokeMethod("refreshWidget", null, object : MethodChannel.Result {
+                                override fun success(result: Any?) {
+                                    // Success - Dart has updated the cache
+                                }
+                                override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
+                                    // Error occurred
+                                }
+                                override fun notImplemented() {
+                                    // Method not implemented
+                                }
+                            })
+                    }
                 }
             }
         }
         
-        val intentFilter = IntentFilter("com.example.pray_time.REFRESH_WIDGET_CACHE")
+        val intentFilter = IntentFilter().apply {
+            addAction("com.example.pray_time.REFRESH_WIDGET_CACHE")
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(widgetRefreshReceiver, intentFilter, Context.RECEIVER_EXPORTED)
         } else {
             registerReceiver(widgetRefreshReceiver, intentFilter)
         }
+    }
+    
+    private fun enqueueWidgetUpdateWorker() {
+        Log.d("MainActivity", "enqueueWidgetUpdateWorker called - enqueueing widget cache update")
+        // Enqueue worker with both vertical and horizontal unique IDs
+        // Use higher level approach - broadcast to the providers to manually refresh
+        val context = this
+        
+        // Send a broadcast that will trigger both vertical and horizontal widget refresh
+        val refreshIntent = Intent(this, PrayerWidgetProvider::class.java).apply {
+            action = "android.appwidget.action.APPWIDGET_UPDATE"
+        }
+        sendBroadcast(refreshIntent)
+        
+        // Also enqueue the worker for async update
+        androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+            "widget_cache_update_daily",
+            androidx.work.ExistingWorkPolicy.REPLACE,
+            androidx.work.OneTimeWorkRequestBuilder<WidgetCacheUpdateWorker>()
+                .build()
+        )
+        Log.d("MainActivity", "Widget update worker enqueued")
     }
     
     override fun onDestroy() {

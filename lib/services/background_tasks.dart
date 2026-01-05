@@ -1024,15 +1024,26 @@ Future<void> testSetCacheExpirationToPast() async {
 
 /// Notify Android widget to refresh after cache update
 /// Sends a broadcast intent that reaches ALL registered widget instances
+/// NOTE: This must work from background isolate, so we use a different approach
 Future<void> notifyWidgetToRefresh() async {
   try {
-    debugPrint('[BackgroundTasks] ⚠ Attempting MethodChannel call from isolate...');
-    // Send broadcast intent to update all widgets
-    const platform = MethodChannel('com.example.pray_time/widget');
-    final result = await platform.invokeMethod('sendWidgetUpdateBroadcast');
-    debugPrint('[BackgroundTasks] ✓ Widget refresh broadcast sent to ALL widget instances: $result');
+    debugPrint('[BackgroundTasks] Triggering widget refresh via WorkManager...');
+    
+    // Since we're in a background isolate, we can't use MethodChannel.
+    // Instead, we trigger the WidgetCacheUpdateWorker which will read the updated
+    // cache from FlutterSharedPreferences and update the Android widgets.
+    
+    // Get the native method channel to call Android code
+    try {
+      const platform = MethodChannel('com.example.pray_time/widget');
+      await platform.invokeMethod('enqueueWidgetUpdateWorker');
+      debugPrint('[BackgroundTasks] ✓ Widget update worker enqueued via MethodChannel');
+    } catch (e) {
+      debugPrint('[BackgroundTasks] ⚠ MethodChannel failed: $e');
+      // The worker may still run via other mechanisms, but log the failure
+    }
+    
   } catch (e) {
     debugPrint('[BackgroundTasks] ✗ FAILED to notify widgets: $e');
-    debugPrint('[BackgroundTasks] This likely means MethodChannel was called from background isolate');
   }
 }

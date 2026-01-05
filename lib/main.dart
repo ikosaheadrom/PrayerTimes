@@ -8120,8 +8120,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 InkWell(
                                   onTap: () async {
                                     final Uri url = Uri.parse('https://github.com/ikosaheadrom/MoroccanPrayerTimes');
-                                    if (await canLaunchUrl(url)) {
-                                      await launchUrl(url);
+                                    try {
+                                      if (await canLaunchUrl(url)) {
+                                        await launchUrl(url);
+                                      } else {
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('No browser app found.')),
+                                          );
+                                        }
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Failed to open link: $e')),
+                                        );
+                                      }
                                     }
                                   },
                                   child: Text(
@@ -8145,7 +8159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ),
                                 SizedBox(height: responsive.spacingS),
                                 Text(
-                                  'App Version: 1.0.0',
+                                  'App Version: 1.0.1',
                                   style: TextStyle(fontSize: responsive.bodySize),
                                 ),
 
@@ -8609,7 +8623,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                       try {
                                         // Use Casablanca coordinates as default test location
                                         const double testLat = 33.5898;
-                                        const double testLon = -7.5898;
+                                        const double testLon = -7.6038;
                                         final now = DateTime.now();
                                         
                                         debugPrint('═════ OFFLINE PRAYER TIME CALCULATION ═════');

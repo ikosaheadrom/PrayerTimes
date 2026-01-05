@@ -10,6 +10,18 @@
     <!-- Huawei/EMUI specific permissions for widgets -->
     <uses-permission android:name="com.huawei.android.launcher.permission.CHANGE_BADGE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    
+    <!-- Package visibility for URL launcher (Android 11+) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
     <application
         android:label="Prayer Times"
         android:name="${applicationName}"
@@ -60,6 +72,15 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/prayer_widget_info" />
+        </receiver>
+        
+        <!-- Widget Manual Refresh Receiver -->
+        <receiver
+            android:name=".WidgetManualRefreshReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.pray_time.MANUAL_WIDGET_REFRESH" />
+            </intent-filter>
         </receiver>
         
         <!-- Prayer Widget Horizontal Provider -->

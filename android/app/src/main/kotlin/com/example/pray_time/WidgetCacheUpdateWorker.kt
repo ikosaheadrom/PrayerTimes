@@ -33,122 +33,81 @@ class WidgetCacheUpdateWorker(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         return@withContext try {
-            logDebug("╔════════════════════════════════════════════════════════╗")
-            logDebug("║ WIDGET CACHE UPDATE WORKER - STARTING                  ║")
-            logDebug("╚════════════════════════════════════════════════════════╝")
+            logDebug("Worker started - fetching prayer times")
             
-            // Fetch prayer times from Dart widget cache system
+            // Request Dart to fetch fresh prayer times
             val prayerTimesMap = fetchPrayerTimesFromDart()
             
             if (prayerTimesMap.isEmpty()) {
-                logError("doWork: ✗ Failed to fetch prayer times from Dart - map is empty")
+                logDebug("Worker: Failed to get prayer times - will retry")
                 return@withContext Result.retry()
             }
             
-            logDebug("doWork: ✓ Prayer times fetched successfully (${prayerTimesMap.size} entries)")
+            logDebug("Worker: Got prayer times successfully")
             
-            // Save to SharedPreferences
+            // Save to SharedPreferences for widget to read
             savePrayerTimesToPrefs(prayerTimesMap)
             
             // Update widget UI
             triggerWidgetUpdate()
             
-            logDebug("╔════════════════════════════════════════════════════════╗")
-            logDebug("║ WIDGET CACHE UPDATE WORKER - COMPLETED                 ║")
-            logDebug("╚════════════════════════════════════════════════════════╝")
+            logDebug("Worker: Complete - prayer times updated")
             Result.success()
             
         } catch (e: Exception) {
-            logError("doWork: ✗ Unexpected error", e)
+            logDebug("Worker: Error - ${e.message}")
             Result.retry()
         }
     }
 
     /**
      * Fetch prayer times from Dart widget cache system
-     * This calls the Dart method to fetch FRESH prayer times, not just read cached data
      */
     private suspend fun fetchPrayerTimesFromDart(): Map<String, String> {
         return withContext(Dispatchers.IO) {
             try {
-                logDebug("──── fetchPrayerTimesFromDart START (REQUESTING FRESH DATA FROM DART) ────")
-                
-                // First try to call Dart to fetch FRESH prayer times via the MainActivity's MethodChannel
-                logDebug("fetchPrayerTimesFromDart: Attempting to fetch FRESH prayer times from Dart...")
+                // Request Dart to fetch fresh times
                 try {
-                    // This will trigger MainActivity to call Dart's refreshWidget method
-                    // which calls quickUpdateWidgetCache() to fetch fresh data
                     val intent = Intent("com.example.pray_time.REFRESH_WIDGET_CACHE")
                     intent.setPackage(applicationContext.packageName)
                     applicationContext.sendBroadcast(intent)
-                    logDebug("fetchPrayerTimesFromDart: ✓ Sent broadcast to refresh widget cache in Dart")
-                    
-                    // Wait a bit for Dart to process and cache the fresh data
-                    Thread.sleep(1000)
+                    Thread.sleep(3000)  // Wait for Dart to update cache
                 } catch (e: Exception) {
-                    logDebug("fetchPrayerTimesFromDart: Failed to trigger fresh fetch: ${e.message}")
+                    // Continue anyway
                 }
                 
-                // Now read the (hopefully fresh) cached widget data from Dart's SharedPreferences
+                // Read cached widget data from Dart's SharedPreferences
                 val sharedPreferences = applicationContext.getSharedPreferences(
                     "FlutterSharedPreferences",
                     Context.MODE_PRIVATE
                 )
                 
-                logDebug("fetchPrayerTimesFromDart: FlutterSharedPreferences obtained")
-                logDebug("fetchPrayerTimesFromDart: Total keys in FlutterSharedPreferences: ${sharedPreferences.all.size}")
-                
-                // Get the widget data from Dart's SharedPreferences
                 val cacheJson = sharedPreferences.getString("flutter.widget_info_cache", null)
-                
-                if (cacheJson == null) {
-                    logError("fetchPrayerTimesFromDart: ✗ No cached data from Dart - 'flutter.widget_info_cache' is NULL")
-                    logDebug("fetchPrayerTimesFromDart: All available keys: ${sharedPreferences.all.keys}")
-                    return@withContext emptyMap()
-                }
-                
-                logDebug("fetchPrayerTimesFromDart: ✓ Cache JSON found (${cacheJson.length} chars)")
-                logDebug("fetchPrayerTimesFromDart: Cache value: ${cacheJson.take(150)}...")
+                    ?: return@withContext emptyMap()
                 
                 // Parse the JSON
                 val gson = Gson()
                 val jsonObject = gson.fromJson(cacheJson, JsonObject::class.java)
-                
-                logDebug("fetchPrayerTimesFromDart: ✓ JSON parsed successfully")
-                logDebug("fetchPrayerTimesFromDart: JSON keys: ${jsonObject.keySet()}")
                 
                 // Extract prayer times
                 val prayerTimes = mutableMapOf<String, String>()
                 
                 val prayerKeys = listOf("fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha")
                 for (key in prayerKeys) {
-                    val value = jsonObject.get(key)?.asString ?: "N/A"
-                    prayerTimes[key] = value
-                    logDebug("fetchPrayerTimesFromDart: ✓ $key = $value")
+                    prayerTimes[key] = jsonObject.get(key)?.asString ?: "N/A"
                 }
                 
-                // Also extract metadata
+                // Extract metadata
                 prayerTimes["source"] = jsonObject.get("source")?.asString ?: "unknown"
                 prayerTimes["location"] = jsonObject.get("location")?.asString ?: "Unknown"
                 prayerTimes["hue"] = jsonObject.get("hue")?.asDouble?.toString() ?: "0.0"
                 prayerTimes["isDarkMode"] = jsonObject.get("isDarkMode")?.asBoolean?.toString() ?: "false"
                 prayerTimes["bgTransparency"] = jsonObject.get("bgTransparency")?.asDouble?.toString() ?: "1.0"
                 prayerTimes["cacheDateDdMmYyyy"] = jsonObject.get("cacheDateDdMmYyyy")?.asString ?: ""
-                prayerTimes["cacheTimestampMs"] = jsonObject.get("cacheTimestampMs")?.asString ?: ""
-                
-                logDebug("fetchPrayerTimesFromDart: ✓ Metadata extracted")
-                logDebug("fetchPrayerTimesFromDart: Source: ${prayerTimes["source"]}")
-                logDebug("fetchPrayerTimesFromDart: Location: ${prayerTimes["location"]}")
-                logDebug("fetchPrayerTimesFromDart: Hue: ${prayerTimes["hue"]}")
-                logDebug("fetchPrayerTimesFromDart: IsDarkMode: ${prayerTimes["isDarkMode"]}")
-                logDebug("fetchPrayerTimesFromDart: BgTransparency: ${prayerTimes["bgTransparency"]}")
-                logDebug("fetchPrayerTimesFromDart: CacheDate: ${prayerTimes["cacheDateDdMmYyyy"]}")
-                logDebug("──── fetchPrayerTimesFromDart COMPLETE ────")
                 
                 return@withContext prayerTimes
                 
             } catch (e: Exception) {
-                logError("fetchPrayerTimesFromDart: ✗ Exception while parsing cache data", e)
                 return@withContext emptyMap()
             }
         }
@@ -159,43 +118,23 @@ class WidgetCacheUpdateWorker(
      */
     private fun savePrayerTimesToPrefs(prayerTimesMap: Map<String, String>) {
         try {
-            logDebug("──── savePrayerTimesToPrefs START ────")
-            
             val widgetPrefs = applicationContext.getSharedPreferences(
                 "widget_prefs",
                 Context.MODE_PRIVATE
             )
             
-            logDebug("savePrayerTimesToPrefs: widget_prefs SharedPreferences obtained")
-            
             val gson = Gson()
             val jsonString = gson.toJson(prayerTimesMap)
             
-            logDebug("savePrayerTimesToPrefs: JSON to save (${jsonString.length} chars): ${jsonString.take(150)}...")
-            
             val editor = widgetPrefs.edit()
             editor.putString(WIDGET_CACHE_KEY, jsonString)
-            logDebug("savePrayerTimesToPrefs: ✓ Added $WIDGET_CACHE_KEY to editor")
-            
             editor.putLong(LAST_UPDATE_TIME_KEY, System.currentTimeMillis())
-            logDebug("savePrayerTimesToPrefs: ✓ Added $LAST_UPDATE_TIME_KEY to editor")
-            
             editor.apply()
-            logDebug("savePrayerTimesToPrefs: ✓ Applied changes to widget_prefs")
             
-            // Verify the save
-            val verifyValue = widgetPrefs.getString(WIDGET_CACHE_KEY, null)
-            if (verifyValue != null) {
-                logDebug("savePrayerTimesToPrefs: ✓ VERIFICATION SUCCESS - Data was saved to widget_prefs")
-                logDebug("savePrayerTimesToPrefs: Verified content: ${verifyValue.take(150)}...")
-            } else {
-                logError("savePrayerTimesToPrefs: ✗ VERIFICATION FAILED - Data NOT found in widget_prefs after save!")
-            }
-            
-            logDebug("──── savePrayerTimesToPrefs COMPLETE ────")
+            logDebug("Worker: Saved ${prayerTimesMap.size} items to widget_prefs")
             
         } catch (e: Exception) {
-            logError("savePrayerTimesToPrefs: ✗ Exception while saving", e)
+            logDebug("Worker: Error saving prefs - ${e.message}")
         }
     }
 
@@ -214,11 +153,6 @@ class WidgetCacheUpdateWorker(
                 PrayerWidgetProvider::class.java
             )
             val verticalWidgetIds = widgetManager.getAppWidgetIds(componentNameVertical)
-            logDebug("triggerWidgetUpdate: Found ${verticalWidgetIds.size} vertical widget IDs")
-            
-            for (id in verticalWidgetIds) {
-                logDebug("triggerWidgetUpdate: Vertical Widget ID: $id")
-            }
             
             // Get horizontal widget IDs
             val componentNameHorizontal = android.content.ComponentName(
@@ -226,20 +160,15 @@ class WidgetCacheUpdateWorker(
                 PrayerWidgetProviderHorizontal::class.java
             )
             val horizontalWidgetIds = widgetManager.getAppWidgetIds(componentNameHorizontal)
-            logDebug("triggerWidgetUpdate: Found ${horizontalWidgetIds.size} horizontal widget IDs")
-            
-            for (id in horizontalWidgetIds) {
-                logDebug("triggerWidgetUpdate: Horizontal Widget ID: $id")
-            }
             
             // Send broadcast to trigger onUpdate for vertical widgets
             if (verticalWidgetIds.isNotEmpty()) {
                 val intentVertical = Intent(applicationContext, PrayerWidgetProvider::class.java).apply {
                     action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, verticalWidgetIds)
+                    setPackage(applicationContext.packageName)
                 }
                 applicationContext.sendBroadcast(intentVertical)
-                logDebug("triggerWidgetUpdate: ✓ Broadcast sent to vertical widget")
             }
             
             // Send broadcast to trigger onUpdate for horizontal widgets
@@ -247,12 +176,12 @@ class WidgetCacheUpdateWorker(
                 val intentHorizontal = Intent(applicationContext, PrayerWidgetProviderHorizontal::class.java).apply {
                     action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
                     putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, horizontalWidgetIds)
+                    setPackage(applicationContext.packageName)
                 }
                 applicationContext.sendBroadcast(intentHorizontal)
-                logDebug("triggerWidgetUpdate: ✓ Broadcast sent to horizontal widget")
             }
             
-            logDebug("triggerWidgetUpdate: ✓ All broadcasts sent successfully")
+            logDebug("Worker: Broadcasts sent to update widgets")
             logDebug("──── triggerWidgetUpdate COMPLETE ────")
             
         } catch (e: Exception) {

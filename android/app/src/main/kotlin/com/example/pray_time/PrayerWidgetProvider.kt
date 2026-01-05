@@ -164,67 +164,24 @@ class PrayerWidgetProvider : AppWidgetProvider() {
 
     /**
      * Handle manual refresh button click
-     * Triggers the WorkManager task to fetch new prayer times
+     * Triggers WorkManager to fetch fresh prayer times from Dart
      */
     private fun handleManualRefresh(context: Context) {
         try {
-            logDebug("═════════════════════════════════════════════════════════")
-            logDebug("handleManualRefresh: STARTING WIDGET CACHE UPDATE")
-            logDebug("═════════════════════════════════════════════════════════")
-            
-            // Log current widget cache BEFORE update
-            logDebug("BEFORE WORKER:")
-            logWidgetCacheStatus(context)
-            
-            // Trigger the WorkManager to fetch new data
+            logDebug("handleManualRefresh: Enqueuing worker with ID: widget_cache_update_vertical")
+            // Enqueue worker to fetch fresh data with unique ID
             val updateRequest = OneTimeWorkRequestBuilder<WidgetCacheUpdateWorker>()
                 .build()
             
             WorkManager.getInstance(context).enqueueUniqueWork(
-                "widget_cache_update",
-                ExistingWorkPolicy.KEEP,
+                "widget_cache_update_vertical",  // Unique ID for vertical widget
+                ExistingWorkPolicy.KEEP,  // KEEP policy - don't interfere with horizontal
                 updateRequest
             )
-            
             logDebug("handleManualRefresh: Worker enqueued successfully")
             
-            // Schedule a delayed check to log cache status AFTER worker completes
-            // and force widget update independently
-            Thread {
-                Thread.sleep(3000) // Wait 3 seconds for worker to complete
-                logDebug("AFTER WORKER (3sec delay):")
-                logWidgetCacheStatus(context)
-                
-                try {
-                    // Get AppWidgetManager and widget IDs
-                    val appWidgetManager = AppWidgetManager.getInstance(context)
-                    val componentName = ComponentName(context, PrayerWidgetProvider::class.java)
-                    val appWidgetIds = appWidgetManager.getAppWidgetIds(componentName)
-                    
-                    logDebug("handleManualRefresh: Found ${appWidgetIds.size} widgets to update")
-                    
-                    // Update each widget directly with fresh cache data
-                    for (appWidgetId in appWidgetIds) {
-                        logDebug("handleManualRefresh: Forcing widget UI update for appWidgetId=$appWidgetId")
-                        updateAppWidget(context, appWidgetManager, appWidgetId)
-                    }
-                    
-                    // Additionally, send broadcast to ensure system picks up changes
-                    val broadcastIntent = Intent(context, PrayerWidgetProvider::class.java).apply {
-                        action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, appWidgetIds)
-                    }
-                    context.sendBroadcast(broadcastIntent)
-                    logDebug("handleManualRefresh: Broadcast sent to ensure widget refresh")
-                    
-                } catch (e: Exception) {
-                    logError("Error during delayed widget update", e)
-                }
-            }.start()
-            
-            logDebug("═════════════════════════════════════════════════════════")
         } catch (e: Exception) {
-            logError("Error triggering widget cache update", e)
+            logError("[ManualRefresh] Error", e)
         }
     }
 
@@ -347,21 +304,10 @@ class PrayerWidgetProvider : AppWidgetProvider() {
         try {
             logDebug("updateAppWidget: Updating widget $appWidgetId")
             logDebug("updateAppWidget: Package name=${context.packageName}")
+            logDebug("updateAppWidget: Creating RemoteViews with R.layout.prayer_widget_minimal")
             
-            // Get stored layout preference for this widget
-            val prefs = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
-            val storedLayoutType = prefs.getString("${WIDGET_LAYOUT_KEY}${appWidgetId}", LAYOUT_MINIMAL) ?: LAYOUT_MINIMAL
-            
-            logDebug("updateAppWidget: Using stored layout type: $storedLayoutType for appWidgetId=$appWidgetId")
-            
-            val layoutId = if (storedLayoutType == LAYOUT_HORIZONTAL) {
-                R.layout.prayer_widget_horizontal
-            } else {
-                R.layout.prayer_widget_minimal
-            }
-            
-            val remoteViews = RemoteViews(context.packageName, layoutId)
-            logDebug("updateAppWidget: RemoteViews created successfully with layout type: $storedLayoutType")
+            val remoteViews = RemoteViews(context.packageName, R.layout.prayer_widget_minimal)
+            logDebug("updateAppWidget: RemoteViews created successfully with prayer_widget_minimal layout")
             val sharedPreferences = context.getSharedPreferences("widget_prefs", Context.MODE_PRIVATE)
             
             // Get cached prayer times
@@ -556,10 +502,10 @@ class PrayerWidgetProvider : AppWidgetProvider() {
             
             if (prayerTimes == null) {
                 logDebug("updateAppWidget: Using test data")
-                setPlaceholderValues(remoteViews, storedLayoutType)
+                setPlaceholderValues(remoteViews)
             } else {
                 logDebug("updateAppWidget: Setting prayer times from cache")
-                setPrayerTimes(remoteViews, prayerTimes, storedLayoutType)
+                setPrayerTimes(remoteViews, prayerTimes)
             }
             
             // Calculate and set next prayer
@@ -567,7 +513,7 @@ class PrayerWidgetProvider : AppWidgetProvider() {
             if (nextPrayer != null) {
                 logDebug("updateAppWidget: Setting next prayer to: ${nextPrayer.first} at ${nextPrayer.second}")
                 // Highlight the next prayer card with the accent color
-                highlightNextPrayerCard(remoteViews, nextPrayer.first, colors, storedLayoutType)
+                highlightNextPrayerCard(remoteViews, nextPrayer.first, colors)
                 logDebug("updateAppWidget: Next prayer highlighted: ${nextPrayer.first} at ${nextPrayer.second}")
                 
                 // Schedule next highlight update
@@ -955,21 +901,24 @@ class PrayerWidgetProvider : AppWidgetProvider() {
             
             val intent = Intent(context, PrayerWidgetProvider::class.java).apply {
                 action = ACTION_MANUAL_REFRESH
+                setPackage(context.packageName)  // Ensure broadcast goes to this package
             }
+            
+            logDebug("setRefreshButtonListener: Intent action=$ACTION_MANUAL_REFRESH, package=${context.packageName}")
             
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 PendingIntent.getBroadcast(
                     context,
-                    0,
+                    1001,  // Use unique ID for refresh button
                     intent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             } else {
-                PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+                PendingIntent.getBroadcast(context, 1001, intent, PendingIntent.FLAG_UPDATE_CURRENT)
             }
             
             remoteViews.setOnClickPendingIntent(R.id.widget_refresh_button, pendingIntent)
-            logDebug("setRefreshButtonListener: Refresh button listener set")
+            logDebug("setRefreshButtonListener: Refresh button listener set successfully")
         } catch (e: Exception) {
             logError("Error setting refresh button listener", e)
         }
@@ -1021,12 +970,12 @@ class PrayerWidgetProvider : AppWidgetProvider() {
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 PendingIntent.getBroadcast(
                     context,
-                    1,
+                    100,
                     intent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
             } else {
-                PendingIntent.getBroadcast(context, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+                PendingIntent.getBroadcast(context, 100, intent, PendingIntent.FLAG_UPDATE_CURRENT)
             }
             
             try {
